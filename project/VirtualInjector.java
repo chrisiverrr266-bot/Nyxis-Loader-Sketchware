@@ -1,372 +1,285 @@
 package com.nyxis.loader;
 
-import android.content.Context;
 import java.io.*;
 import java.util.*;
+import android.content.*;
+import android.os.*;
 
 /**
  * Advanced Virtual Environment Injector
- * Injects library into virtual apps (VirtualXposed, VMOS, Parallel Space, etc.)
+ * Supports: VirtualXposed, VMOS, Parallel Space, etc.
  */
 public class VirtualInjector {
 
-    // Common virtual app package names
-    private static final String[] VIRTUAL_APPS = {
+    // Common virtual environment package names
+    private static final String[] VIRTUAL_PACKAGES = {
         "io.va.exposed",              // VirtualXposed
         "com.vmos.pro",               // VMOS Pro
-        "com.parallels.desktop",      // Parallel Space
-        "com.lbe.parallel.intl",      // Parallel Space Lite
+        "com.lbe.parallel.intl",      // Parallel Space
         "com.ludashi.dualspace",      // Dual Space
         "com.oasisfeng.island",       // Island
-        "com.benny.openlauncher"      // Multiple Accounts
+        "com.excelliance.multiaccounts" // Multiple Accounts
     };
 
     /**
-     * Method 1: LD_PRELOAD Injection
-     * Preloads library before app starts in virtual environment
+     * Inject library into virtual environment
      */
-    public static boolean injectWithLDPreload(Context context, String libPath, String targetPackage) {
-        try {
-            // Copy library to accessible location
-            File tempLib = new File(context.getExternalFilesDir(null), "inject_lib.so");
-            copyFile(new File(libPath), tempLib);
-            
-            // Set LD_PRELOAD environment variable
-            String cmd = String.format(
-                "export LD_PRELOAD=%s && am start -n %s/.MainActivity",
-                tempLib.getAbsolutePath(),
-                targetPackage
-            );
-            
-            return executeCommand(cmd);
-        } catch (Exception e) {
-            e.printStackTrace();
-            return false;
-        }
-    }
-
-    /**
-     * Method 2: Virtual App Configuration Injection
-     * Modifies virtual app's configuration to auto-load library
-     */
-    public static boolean injectIntoVirtualConfig(String virtualAppPackage, String libPath) {
-        try {
-            // Find virtual app data directory
-            String virtualDataDir = "/data/data/" + virtualAppPackage;
-            
-            // Common config file locations
-            String[] configPaths = {
-                virtualDataDir + "/files/config.json",
-                virtualDataDir + "/shared_prefs/settings.xml",
-                virtualDataDir + "/virtual_config",
-                virtualDataDir + "/app_config/plugins.cfg"
-            };
-            
-            // Add library to virtual app's preload list
-            for (String configPath : configPaths) {
-                if (new File(configPath).exists()) {
-                    addLibraryToConfig(configPath, libPath);
-                }
-            }
-            
-            return true;
-        } catch (Exception e) {
-            e.printStackTrace();
-            return false;
-        }
-    }
-
-    /**
-     * Method 3: Hook Virtual App's Dalvik VM
-     * Injects into virtual environment's Java VM
-     */
-    public static boolean hookVirtualDalvikVM(String libPath, String targetPackage) {
-        try {
-            // Load native library first
-            System.load(libPath);
-            
-            // Hook common virtual app methods
-            hookVirtualAppLauncher(targetPackage);
-            
-            return true;
-        } catch (Exception e) {
-            e.printStackTrace();
-            return false;
-        }
-    }
-
-    /**
-     * Method 4: Patch Virtual App APK
-     * Modifies virtual app's APK to include auto-injection
-     */
-    public static boolean patchVirtualAPK(String virtualApkPath, String libPath) {
-        try {
-            File apkFile = new File(virtualApkPath);
-            if (!apkFile.exists()) return false;
-            
-            // Extract APK
-            String extractDir = virtualApkPath + "_extracted";
-            extractAPK(virtualApkPath, extractDir);
-            
-            // Add library to APK's lib folder
-            String libDir = extractDir + "/lib/armeabi-v7a/";
-            new File(libDir).mkdirs();
-            copyFile(new File(libPath), new File(libDir + "libNyxisCheat.so"));
-            
-            // Modify AndroidManifest.xml to load library on startup
-            modifyManifest(extractDir + "/AndroidManifest.xml", libPath);
-            
-            // Repack APK
-            repackAPK(extractDir, virtualApkPath + "_modded.apk");
-            
-            return true;
-        } catch (Exception e) {
-            e.printStackTrace();
-            return false;
-        }
-    }
-
-    /**
-     * Method 5: Runtime Memory Injection
-     * Injects library directly into running virtual process
-     */
-    public static boolean injectIntoVirtualProcess(String virtualPackage, String libPath) {
-        try {
-            // Get virtual app process ID
-            int pid = getProcessPID(virtualPackage);
-            if (pid == -1) return false;
-            
-            // Use ptrace to inject into process
-            return ptraceInject(pid, libPath);
-        } catch (Exception e) {
-            e.printStackTrace();
-            return false;
-        }
-    }
-
-    /**
-     * Method 6: Virtual App Plugin System
-     * Uses virtual app's plugin API to load library
-     */
-    public static boolean loadAsVirtualPlugin(Context context, String virtualPackage, String libPath) {
-        try {
-            // Copy library to virtual app's plugin directory
-            String pluginDir = "/data/data/" + virtualPackage + "/plugins/";
-            new File(pluginDir).mkdirs();
-            
-            File destLib = new File(pluginDir + "nyxis_plugin.so");
-            copyFile(new File(libPath), destLib);
-            
-            // Create plugin manifest
-            createPluginManifest(pluginDir, destLib.getAbsolutePath());
-            
-            // Notify virtual app of new plugin
-            notifyVirtualApp(context, virtualPackage, "plugin_added");
-            
-            return true;
-        } catch (Exception e) {
-            e.printStackTrace();
-            return false;
-        }
-    }
-
-    /**
-     * Method 7: Hook Virtual App's ClassLoader
-     * Intercepts app loading in virtual environment
-     */
-    public static boolean hookVirtualClassLoader(String targetPackage, String libPath) {
-        try {
-            // Hook the virtual app's ClassLoader to inject library
-            String hookCode = generateClassLoaderHook(libPath);
-            
-            // Inject hook code into virtual environment
-            return injectHookCode(targetPackage, hookCode);
-        } catch (Exception e) {
-            e.printStackTrace();
-            return false;
-        }
-    }
-
-    // ==================== Helper Methods ====================
-
-    private static void copyFile(File src, File dest) throws IOException {
-        FileInputStream fis = new FileInputStream(src);
-        FileOutputStream fos = new FileOutputStream(dest);
-        byte[] buffer = new byte[4096];
-        int bytesRead;
-        while ((bytesRead = fis.read(buffer)) != -1) {
-            fos.write(buffer, 0, bytesRead);
-        }
-        fis.close();
-        fos.close();
-    }
-
-    private static boolean executeCommand(String cmd) {
-        try {
-            Process process = Runtime.getRuntime().exec(new String[]{"sh", "-c", cmd});
-            process.waitFor();
-            return process.exitValue() == 0;
-        } catch (Exception e) {
-            return false;
-        }
-    }
-
-    private static void addLibraryToConfig(String configPath, String libPath) throws IOException {
-        // Read existing config
-        StringBuilder config = new StringBuilder();
-        BufferedReader reader = new BufferedReader(new FileReader(configPath));
-        String line;
-        while ((line = reader.readLine()) != null) {
-            config.append(line).append("\n");
-        }
-        reader.close();
+    public static boolean injectIntoVirtual(Context context, String targetPackage, String libPath) {
+        // Detect which virtual environment is installed
+        String virtualPackage = detectVirtualEnvironment(context);
         
-        // Add library entry
-        String libEntry = "\n<preload_library>" + libPath + "</preload_library>\n";
-        config.append(libEntry);
-        
-        // Write back
-        FileWriter writer = new FileWriter(configPath);
-        writer.write(config.toString());
-        writer.close();
-    }
-
-    private static void hookVirtualAppLauncher(String targetPackage) {
-        // Hook implementation would use native code
-        // This is a placeholder for the actual hook logic
-    }
-
-    private static void extractAPK(String apkPath, String destDir) throws IOException {
-        // APK extraction logic
-        executeCommand("unzip -q " + apkPath + " -d " + destDir);
-    }
-
-    private static void modifyManifest(String manifestPath, String libPath) throws IOException {
-        // Modify AndroidManifest.xml to add library loading
-        BufferedReader reader = new BufferedReader(new FileReader(manifestPath));
-        StringBuilder manifest = new StringBuilder();
-        String line;
-        
-        while ((line = reader.readLine()) != null) {
-            if (line.contains("<application")) {
-                manifest.append(line).append("\n");
-                manifest.append("    <meta-data android:name=\"preload_lib\" android:value=\"");
-                manifest.append(libPath).append("\" />\n");
-            } else {
-                manifest.append(line).append("\n");
-            }
-        }
-        reader.close();
-        
-        FileWriter writer = new FileWriter(manifestPath);
-        writer.write(manifest.toString());
-        writer.close();
-    }
-
-    private static void repackAPK(String sourceDir, String destApk) throws IOException {
-        // Repack APK
-        executeCommand("cd " + sourceDir + " && zip -r " + destApk + " .");
-    }
-
-    private static int getProcessPID(String packageName) {
-        try {
-            Process process = Runtime.getRuntime().exec("ps");
-            BufferedReader reader = new BufferedReader(
-                new InputStreamReader(process.getInputStream()));
-            
-            String line;
-            while ((line = reader.readLine()) != null) {
-                if (line.contains(packageName)) {
-                    String[] parts = line.trim().split("\\s+");
-                    return Integer.parseInt(parts[1]);
-                }
-            }
-            reader.close();
-        } catch (Exception e) {
-            // Ignore
-        }
-        return -1;
-    }
-
-    private static boolean ptraceInject(int pid, String libPath) {
-        try {
-            // Ptrace injection requires root
-            String cmd = String.format(
-                "su -c 'ptrace_inject %d %s'",
-                pid, libPath
-            );
-            return executeCommand(cmd);
-        } catch (Exception e) {
+        if (virtualPackage == null) {
             return false;
         }
-    }
-
-    private static void createPluginManifest(String pluginDir, String libPath) throws IOException {
-        String manifest = "{\n" +
-                "  \"name\": \"Nyxis Plugin\",\n" +
-                "  \"version\": \"1.0\",\n" +
-                "  \"library\": \"" + libPath + "\",\n" +
-                "  \"auto_load\": true\n" +
-                "}";
         
-        FileWriter writer = new FileWriter(pluginDir + "manifest.json");
-        writer.write(manifest);
-        writer.close();
-    }
-
-    private static void notifyVirtualApp(Context context, String virtualPackage, String action) {
-        try {
-            android.content.Intent intent = new android.content.Intent();
-            intent.setPackage(virtualPackage);
-            intent.setAction("com.virtual.ACTION_" + action.toUpperCase());
-            context.sendBroadcast(intent);
-        } catch (Exception e) {
-            // Ignore
+        // Copy library to virtual accessible location
+        String virtualLibPath = copyToVirtualPath(libPath, virtualPackage);
+        
+        if (virtualLibPath == null) {
+            return false;
         }
-    }
-
-    private static String generateClassLoaderHook(String libPath) {
-        return "System.load(\"" + libPath + "\");";
-    }
-
-    private static boolean injectHookCode(String targetPackage, String hookCode) {
-        // This would require DEX manipulation or runtime code injection
-        return false; // Placeholder
+        
+        // Configure virtual environment to load library
+        switch (virtualPackage) {
+            case "io.va.exposed":
+                return injectVirtualXposed(context, targetPackage, virtualLibPath);
+            case "com.vmos.pro":
+                return injectVMOS(targetPackage, virtualLibPath);
+            default:
+                return injectGenericVirtual(targetPackage, virtualLibPath);
+        }
     }
 
     /**
-     * Detect which virtual app is installed
+     * Detect installed virtual environment
      */
-    public static String detectVirtualApp(Context context) {
-        android.content.pm.PackageManager pm = context.getPackageManager();
-        for (String virtualPkg : VIRTUAL_APPS) {
+    private static String detectVirtualEnvironment(Context context) {
+        PackageManager pm = context.getPackageManager();
+        
+        for (String packageName : VIRTUAL_PACKAGES) {
             try {
-                pm.getPackageInfo(virtualPkg, 0);
-                return virtualPkg; // Found!
+                pm.getPackageInfo(packageName, 0);
+                return packageName; // Found virtual environment
             } catch (Exception e) {
-                // Not installed
+                // Not installed, continue
             }
         }
         return null;
     }
 
     /**
-     * Main injection method - tries multiple techniques
+     * Copy library to virtual-accessible path
      */
-    public static boolean autoInject(Context context, String libPath, String targetPackage) {
-        // Detect virtual app
-        String virtualApp = detectVirtualApp(context);
-        if (virtualApp == null) {
-            return false; // No virtual app found
+    private static String copyToVirtualPath(String libPath, String virtualPackage) {
+        try {
+            File sourceFile = new File(libPath);
+            
+            // Virtual environments can access /sdcard/
+            File destDir = new File(Environment.getExternalStorageDirectory(), 
+                "NyxisLoader/libs");
+            destDir.mkdirs();
+            
+            File destFile = new File(destDir, "libNyxisCheat.so");
+            
+            // Copy file
+            FileInputStream fis = new FileInputStream(sourceFile);
+            FileOutputStream fos = new FileOutputStream(destFile);
+            
+            byte[] buffer = new byte[4096];
+            int length;
+            while ((length = fis.read(buffer)) > 0) {
+                fos.write(buffer, 0, length);
+            }
+            
+            fis.close();
+            fos.close();
+            
+            return destFile.getAbsolutePath();
+        } catch (Exception e) {
+            return null;
         }
-        
-        // Try multiple methods in order of success rate
-        if (injectWithLDPreload(context, libPath, targetPackage)) return true;
-        if (loadAsVirtualPlugin(context, virtualApp, libPath)) return true;
-        if (injectIntoVirtualConfig(virtualApp, libPath)) return true;
-        if (hookVirtualClassLoader(targetPackage, libPath)) return true;
-        if (injectIntoVirtualProcess(virtualApp, libPath)) return true;
-        
+    }
+
+    /**
+     * Inject into VirtualXposed
+     */
+    private static boolean injectVirtualXposed(Context context, String targetPackage, String libPath) {
+        try {
+            // Create configuration file for VirtualXposed
+            File configDir = new File(Environment.getExternalStorageDirectory(),
+                "VirtualXposed/config");
+            configDir.mkdirs();
+            
+            File configFile = new File(configDir, targetPackage + ".conf");
+            FileWriter writer = new FileWriter(configFile);
+            
+            // Write injection config
+            writer.write("# Nyxis Loader Configuration\n");
+            writer.write("LIBRARY_PATH=" + libPath + "\n");
+            writer.write("INJECTION_METHOD=LD_PRELOAD\n");
+            writer.write("AUTO_INJECT=true\n");
+            
+            writer.close();
+            
+            // Launch target app in VirtualXposed with library
+            Intent intent = new Intent();
+            intent.setClassName("io.va.exposed", "io.va.exposed.ui.VirtualXposedActivity");
+            intent.putExtra("package_name", targetPackage);
+            intent.putExtra("library_path", libPath);
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            
+            context.startActivity(intent);
+            return true;
+            
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /**
+     * Inject into VMOS
+     */
+    private static boolean injectVMOS(String targetPackage, String libPath) {
+        try {
+            // VMOS uses a different approach - modify init script
+            File vmosDir = new File(Environment.getExternalStorageDirectory(),
+                "vmos/custom");
+            vmosDir.mkdirs();
+            
+            File initScript = new File(vmosDir, "init.sh");
+            FileWriter writer = new FileWriter(initScript, true);
+            
+            // Add LD_PRELOAD to init script
+            writer.write("\n# Nyxis Loader\n");
+            writer.write("export LD_PRELOAD=" + libPath + "\n");
+            writer.write("am start -n " + targetPackage + "/.MainActivity\n");
+            
+            writer.close();
+            
+            // Make executable
+            Runtime.getRuntime().exec("chmod 755 " + initScript.getAbsolutePath());
+            
+            return true;
+            
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /**
+     * Generic virtual environment injection
+     */
+    private static boolean injectGenericVirtual(String targetPackage, String libPath) {
+        try {
+            // Create LD_PRELOAD configuration
+            File preloadFile = new File(Environment.getExternalStorageDirectory(),
+                "NyxisLoader/preload.conf");
+            
+            FileWriter writer = new FileWriter(preloadFile);
+            writer.write(libPath);
+            writer.close();
+            
+            // Try to set environment variable
+            ProcessBuilder pb = new ProcessBuilder();
+            Map<String, String> env = pb.environment();
+            env.put("LD_PRELOAD", libPath);
+            
+            // Launch target
+            pb.command("am", "start", "-n", targetPackage + "/.MainActivity");
+            Process process = pb.start();
+            process.waitFor();
+            
+            return process.exitValue() == 0;
+            
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /**
+     * Setup auto-load for cloned apps
+     */
+    public static boolean setupAutoLoad(Context context, String targetPackage, String libPath) {
+        try {
+            // Create autoload configuration
+            File autoloadDir = new File(Environment.getExternalStorageDirectory(),
+                "NyxisLoader/autoload");
+            autoloadDir.mkdirs();
+            
+            File configFile = new File(autoloadDir, targetPackage + ".json");
+            FileWriter writer = new FileWriter(configFile);
+            
+            // JSON configuration
+            writer.write("{\n");
+            writer.write("  \"package\": \"" + targetPackage + "\",\n");
+            writer.write("  \"library\": \"" + libPath + "\",\n");
+            writer.write("  \"auto_inject\": true,\n");
+            writer.write("  \"show_menu\": true,\n");
+            writer.write("  \"method\": \"LD_PRELOAD\"\n");
+            writer.write("}\n");
+            
+            writer.close();
+            
+            // Create trigger script
+            File triggerScript = new File(autoloadDir, "trigger.sh");
+            FileWriter scriptWriter = new FileWriter(triggerScript);
+            
+            scriptWriter.write("#!/system/bin/sh\n");
+            scriptWriter.write("# Nyxis Auto-Loader\n\n");
+            scriptWriter.write("PACKAGE=" + targetPackage + "\n");
+            scriptWriter.write("LIB=" + libPath + "\n\n");
+            scriptWriter.write("export LD_PRELOAD=$LIB\n");
+            scriptWriter.write("am start -n $PACKAGE/.MainActivity\n");
+            
+            scriptWriter.close();
+            
+            // Make executable
+            Runtime.getRuntime().exec("chmod 755 " + triggerScript.getAbsolutePath());
+            
+            return true;
+            
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /**
+     * Check if app is running in virtual environment
+     */
+    public static boolean isRunningInVirtual() {
+        try {
+            // Check for virtual environment indicators
+            String[] virtualIndicators = {
+                "/data/data/io.va.exposed",
+                "/data/data/com.vmos.pro",
+                "/system/lib/libva.so",
+                "/proc/self/cmdline"
+            };
+            
+            for (String indicator : virtualIndicators) {
+                File file = new File(indicator);
+                if (file.exists()) {
+                    return true;
+                }
+            }
+            
+            // Check process name
+            BufferedReader reader = new BufferedReader(
+                new FileReader("/proc/self/cmdline"));
+            String cmdline = reader.readLine();
+            reader.close();
+            
+            if (cmdline != null) {
+                for (String virtualPkg : VIRTUAL_PACKAGES) {
+                    if (cmdline.contains(virtualPkg)) {
+                        return true;
+                    }
+                }
+            }
+            
+        } catch (Exception e) {
+            // Ignore
+        }
         return false;
     }
 }
