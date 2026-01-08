@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Nyxis Loader</string>
+    <string name="inject_button">INJECT LIBRARY</string>
+    <string name="status_ready">Ready to inject</string>
+    <string name="downloading">Downloading library from GitHub...</string>
+    <string name="injecting">Injecting into Call of Duty Mobile...</string>
+    <string name="success">✓ Injection successful!</string>
+    <string name="error_download">Download failed. Check internet connection.</string>
+    <string name="error_inject">Injection failed. Root access required.</string>
+    <string name="support_text">SUPPORT ME - JOIN DISCUSSION</string>
+    <string name="contact_text">CONTACT ME DIRECTLY</string>
+    <string name="made_by">Made with ❤ by Nyxis</string>
+</resources>
